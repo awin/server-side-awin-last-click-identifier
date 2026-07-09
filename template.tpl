@@ -313,6 +313,16 @@ if(referrer != undefined && Contains(referrer,websiteDomain)){
   data.gtmOnSuccess();
 } else {
   //First visit in the session, proceed with tag behaviour.
+//Awin click cookie takes precedence: if the Awin click cookie ("cks") is present in the request,
+//set the channel to "aw" regardless of URL parameters. Confirm the exact Awin click cookie name if needed.
+let awinClickCookie = getCookie('cks');
+if(awinClickCookie != undefined && awinClickCookie[0]){
+awLastClick = "aw";
+SetChannelCookie();
+data.gtmOnSuccess();
+return;
+}
+
     
   //Find and match the given source parameter.
 
