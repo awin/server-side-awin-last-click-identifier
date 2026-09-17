@@ -1,11 +1,3 @@
-﻿___TERMS_OF_SERVICE___
-
-By creating or modifying this file you agree to Google Tag Manager's Community
-Template Gallery Developer Terms of Service available at
-https://developers.google.com/tag-manager/gallery-tos (or such other URL as
-Google may provide), as modified from time to time.
-
-
 ___INFO___
 
 {
@@ -78,7 +70,7 @@ ___TEMPLATE_PARAMETERS___
     "name": "sourceParameters",
     "displayName": "Used Source Parameters",
     "simpleValueType": true,
-    "defaultValue": "utm_source,source,gclid,fbclid",
+    "defaultValue": "utm_source,source",
     "alwaysInSummary": true,
     "valueValidators": [
       {
@@ -178,7 +170,7 @@ const getEventData = require('getEventData');
 const assertThat = require('assertThat');
 const JSON = require('JSON');
 const getTimestampMillis = require ('getTimestampMillis');
-
+(function () {
 //Variables from input fields
 const cookiePeriod = data.cookiePeriod;
 const cookieName = data.cookieName;
@@ -188,24 +180,23 @@ const awinSource = data.awinSource.split(",");
 const parseUrl = require('parseUrl');
 const overwriteCookieDomain = data.overwriteCookieDomain;
 const awinChannelCookieDomain = data.awinChannelCookieDomain;
-
-//URL variables. 
+//URL variables.
 let referrer = getEventData('page_referrer'); // This will return the referrer URL for deduping agains organic.
 let URL = data.pageURL; // This will return the current URL
 let urlObject = parseUrl(URL); // This object contains the components of the URL, will be used to retrieve specific parts of it.
 let cookieDomain = ""; // The domain for the AwinChannel cookie, will consider subdomains
-let urlParts = urlObject.host.split("."); //Used to split the host, and get only the relevant data for the cookieDomain 
+let urlParts = urlObject.host.split("."); //Used to split the host, and get only the relevant data for the cookieDomain
 const queryParamsObject = parseUrl(URL).searchParams;
-
 //Internal script variables
 let sourceValue = "";
 let awLastClick = "";
 let matchedSourceParameter = "na";
 let queryValues = "";
-let containsAwaid;
+let hasAwaid = false;
+let hasOtherClick = false;
+let sourceParamValue = null;
 let cookieLength;
 let isOrganicJourney;
-
 //Contains function will take a string and a substring, and check if the substring is contained in the given string. This functionality is not offered by Sandboxed JavaScript by default.
 const Contains = function (string, substring){
   let contains = false;
@@ -217,14 +208,12 @@ const Contains = function (string, substring){
   const substringCharacters = substring.split("");
   let substringMatchedCharacters = substringCharacters.length;
   let j = 0;
-  
   for(var i = 0; i < stringCharacters.length; i++){
     if(substringCharacters[j] == undefined){
       j = 0;
     }
-    
     if(stringCharacters[i] == substringCharacters[j]){
-      substringMatchedCharacters--;  
+      substringMatchedCharacters--;
       j++;
       if(substringMatchedCharacters == 0){
         contains = true;
@@ -234,16 +223,12 @@ const Contains = function (string, substring){
       substringMatchedCharacters = substringCharacters.length;
       j = 0;
     }
-        
   }
-  
   if(substringMatchedCharacters > 0){
     contains = false;
   }
-  
   return contains;
 };
-
 if(overwriteCookieDomain){
   cookieDomain = awinChannelCookieDomain;
   if(cookieDomain.substring(0, 1) != "."){
@@ -252,21 +237,17 @@ if(overwriteCookieDomain){
 } else {
   for(var i = 0; i < urlParts.length; i++){
     if(urlParts[i] != "www"){
-      cookieDomain += "." + urlParts[i]; 
+      cookieDomain += "." + urlParts[i];
     }
   }
 }
-
 let websiteDomain = "";
-
 if(cookieDomain.substring(0, 1) == "."){
   websiteDomain = cookieDomain.substring(1);
 } else {
   websiteDomain = cookieDomain;
 }
-
 let options = {};
-
 //Check if the cookie should be a session cookie or not.
 if(cookiePeriod == 0){
   options = {
@@ -287,35 +268,29 @@ if(cookiePeriod == 0){
     'httpOnly':true
   };
 }
-
 //Console log and debug section
 function TagFired(){
   const timestamp = getTimestampMillis();
-  log("AwinLastClickIdentifierDebug=true&ServerSide=true&timestamp=" + timestamp + "&sourceParameterValue=" + matchedSourceParameter + "&expectedCookieValue=" + awLastClick + "&cookieName=" + cookieName + "&referrerURL=" + referrer); 
+  log("AwinLastClickIdentifierDebug=true&ServerSide=true&timestamp=" + timestamp + "&sourceParameterValue=" + matchedSourceParameter + "&expectedCookieValue=" + awLastClick + "&cookieName=" + cookieName + "&referrerURL=" + referrer);
 }
-
 function SetChannelCookie(){
   //Check if the cookise should be a session cookie, and if the user is out of an Awin session, if so, hault the progress of the tag.
   if(cookiePeriod == 0 && matchedSourceParameter == "na" && !isOrganicJourney && !getCookie(cookieName)[0]){
     awLastClick = "direct";
     setCookie(cookieName, awLastClick, options, false);
     TagFired();
-    data.gtmOnSuccess();
     return;
   }
   TagFired();
   setCookie(cookieName, awLastClick, options, false);
 }
-
 //Since the tag now uses an all pages trigger, it needs to know if the user is simply navigating through the website, or visiting it for the first time in his journey.
 if(referrer != undefined && Contains(referrer,websiteDomain)){
   //Navigating through website, halt the progress of the tag.
-  data.gtmOnSuccess();
+  return;
 } else {
   //First visit in the session, proceed with tag behaviour.
-    
   //Find and match the given source parameter.
-
   // Iterate over the properties of the object using a for...in loop
   for (let key in queryParamsObject) {
     if (queryParamsObject.hasOwnProperty(key)) {
@@ -323,17 +298,33 @@ if(referrer != undefined && Contains(referrer,websiteDomain)){
       if (sourceParameters.indexOf(key) > -1) {
         matchedSourceParameter = value;
       }
-      // If the user visited via Google Parallel, create the cookie where Awin is the winning last paid click referring channel, and halt the progress of the tag.
-      if (key === "awaid") {  
-        containsAwaid = true;
-        awLastClick = "aw";
-        SetChannelCookie();
-        data.gtmOnSuccess();
-        return;
+      if (key === "source") {
+        sourceParamValue = value;
+      }
+      if (key === "awaid") {
+        hasAwaid = true;
+      }
+      if (key === "fbclid" || key === "gclid") {
+        hasOtherClick = true;
       }
     }
-  }  
-  
+  }
+  //if "source" parameter was present, then prefer it
+  if (sourceParamValue !== null) {
+    matchedSourceParameter = sourceParamValue;
+  }
+  //handle parallel tracking
+  if (hasAwaid) {
+    awLastClick = "aw";
+    SetChannelCookie();
+    return;
+  }
+  //handle google/fb channels
+  if (hasOtherClick) {
+    awLastClick = "other";
+    SetChannelCookie();
+    return;
+  }
   //Check if advertiser enabled the organic filter or not.
   if(organicFilter == true){
     for(var i = 0; i < awinSource.length; i++){
@@ -345,10 +336,10 @@ if(referrer != undefined && Contains(referrer,websiteDomain)){
       } else if(Contains(referrer, "google") || Contains(referrer, "bing") || Contains(referrer, "yahoo") || Contains(referrer, "yandex") || Contains(referrer, "duckduckgo")){
         awLastClick = "organic";
         isOrganicJourney = true;
-        SetChannelCookie(); 
+        SetChannelCookie();
       } else if(matchedSourceParameter.toLowerCase() != "na" && matchedSourceParameter.toLowerCase() != awinSource[i].toLowerCase()){
         awLastClick = "other";
-        SetChannelCookie(); 
+        SetChannelCookie();
       }
     }
   } else {
@@ -365,16 +356,15 @@ if(referrer != undefined && Contains(referrer,websiteDomain)){
       }
     }
   }
-  
   //Check if no cookie was created, this means the user didn't interact with any medias, default cookie to "undefined".
   if(!getCookie(cookieName)[0] && matchedSourceParameter == "na"){
     awLastClick = "direct";
     SetChannelCookie();
   }
-  
-  // Call data.gtmOnSuccess when the tag is finished.
-  data.gtmOnSuccess();
 }
+}());
+// Call data.gtmOnSuccess when the tag is finished.
+data.gtmOnSuccess();
 
 
 ___SERVER_PERMISSIONS___
@@ -513,6 +503,7 @@ ___SERVER_PERMISSIONS___
     "isRequired": true
   }
 ]
+
 
 ___TESTS___
 
