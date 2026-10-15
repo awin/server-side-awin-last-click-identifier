@@ -2,9 +2,11 @@ homepage: "https://www.awin.com"
 documentation: "https://www.awin.com"
 versions:
 # Latest version
+  - sha: a9e6280106cb2fb2176f6d6c62b01d472aacac50
+    changeNotes: "Fixed the source parameter preference bug."
+# Older versions
   - sha: 06656e3988cbfae18591d0da66eaad9219fe8ca2
     changeNotes: "Resized image, added categories, added brand name and id."
-# Older versions
   - sha: 0ca99cb092c314d855af887f46ff1fb83d21bfdb
     changeNotes: "Added terms and conditions"
   - sha: 23f2408e256e603414993529faf374f602eba02d
