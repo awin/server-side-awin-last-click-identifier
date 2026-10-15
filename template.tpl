@@ -1,10 +1,3 @@
-___TERMS_OF_SERVICE___
-
-By creating or modifying this file you agree to Google Tag Manager's Community
-Template Gallery Developer Terms of Service available at
-https://developers.google.com/tag-manager/gallery-tos (or such other URL as
-Google may provide), as modified from time to time.
-
 ___INFO___
 
 {
@@ -104,7 +97,7 @@ ___TEMPLATE_PARAMETERS___
     "displayName": "Awin Source Values",
     "simpleValueType": true,
     "alwaysInSummary": true,
-    "defaultValue": "awin,aw",
+    "defaultValue": "awin",
     "help": "The value passed inside the source parameter used in Awin links. Leave this as \"awin\" if you are unsure. If you use multiple values, separate them using a comma",
     "valueValidators": [
       {
@@ -173,207 +166,232 @@ ___TEMPLATE_PARAMETERS___
 
 ___SANDBOXED_JS_FOR_SERVER___
 
-//Permissions
-const queryPermission = require('queryPermission');
-const setCookie = require('setCookie');
-const getCookie = require('getCookieValues');
-const log = require('logToConsole');
-const getEventData = require('getEventData');
-const assertThat = require('assertThat');
-const JSON = require('JSON');
-const getTimestampMillis = require ('getTimestampMillis');
 (function () {
-//Variables from input fields
-const cookiePeriod = data.cookiePeriod;
-const cookieName = data.cookieName;
-const sourceParameters = data.sourceParameters.split(",");
-const organicFilter = data.organicFilter;
-const awinSource = data.awinSource.split(",");
-const parseUrl = require('parseUrl');
-const overwriteCookieDomain = data.overwriteCookieDomain;
-const awinChannelCookieDomain = data.awinChannelCookieDomain;
-//URL variables.
-let referrer = getEventData('page_referrer'); // This will return the referrer URL for deduping agains organic.
-let URL = data.pageURL; // This will return the current URL
-let urlObject = parseUrl(URL); // This object contains the components of the URL, will be used to retrieve specific parts of it.
-let cookieDomain = ""; // The domain for the AwinChannel cookie, will consider subdomains
-let urlParts = urlObject.host.split("."); //Used to split the host, and get only the relevant data for the cookieDomain
-const queryParamsObject = parseUrl(URL).searchParams;
-//Internal script variables
-let sourceValue = "";
-let awLastClick = "";
-let matchedSourceParameter = "na";
-let queryValues = "";
-let hasAwaid = false;
-let hasOtherClick = false;
-let sourceParamValue = null;
-let cookieLength;
-let isOrganicJourney;
-//Contains function will take a string and a substring, and check if the substring is contained in the given string. This functionality is not offered by Sandboxed JavaScript by default.
-const Contains = function (string, substring){
-  let contains = false;
-  if(string == undefined || substring == undefined){
-    log("String => " + string + " | Substring => " + substring);
-    return;
-  }
-  const stringCharacters = string.split("");
-  const substringCharacters = substring.split("");
-  let substringMatchedCharacters = substringCharacters.length;
-  let j = 0;
-  for(var i = 0; i < stringCharacters.length; i++){
-    if(substringCharacters[j] == undefined){
-      j = 0;
+  //Permissions
+  const queryPermission = require('queryPermission');
+  const setCookie = require('setCookie');
+  const getCookie = require('getCookieValues');
+  const log = require('logToConsole');
+  const getEventData = require('getEventData');
+  const assertThat = require('assertThat');
+  const Object = require('Object');
+  const encodeUriComponent = require('encodeUriComponent');
+  const parseUrl = require('parseUrl');
+  const JSON = require('JSON');
+  const getTimestampMillis = require('getTimestampMillis');
+
+  //Variables from input fields
+  const cookiePeriod = data.cookiePeriod;
+  const cookieName = data.cookieName;
+  const organicFilter = data.organicFilter;
+  const sourceParameters = data.sourceParameters.split(",").map(function (p) { return p.trim(); });
+  const awinSource = data.awinSource.split(",").map(function (s) { return s.trim(); });
+  const overwriteCookieDomain = data.overwriteCookieDomain;
+  const awinChannelCookieDomain = data.awinChannelCookieDomain;
+
+  //URL variables.
+  let referrer = getEventData('page_referrer'); // This will return the referrer URL for deduping agains organic.
+  let URL = data.pageURL; // This will return the current URL
+  let urlObject = parseUrl(URL); // This object contains the components of the URL, will be used to retrieve specific parts of it.
+  let cookieDomain = ""; // The domain for the AwinChannel cookie, will consider subdomains
+  let urlParts = urlObject.host.split("."); //Used to split the host, and get only the relevant data for the cookieDomain
+  const searchParams = parseUrl(URL).searchParams;
+
+  //parse searchParams into an array to keep the business logic the same as the client-side tag
+  const queryParameters = [];
+  Object.keys(searchParams).forEach(function (key) {
+    const value = searchParams[key];
+    // parseUrl returns an array when a parameter is repeated (e.g. ?a=1&a=2)
+    const values = (typeof value === 'object' && value !== null) ? value : [value];
+    values.forEach(function (v) {
+      queryParameters.push(encodeUriComponent(key) + '=' + encodeUriComponent(v));
+    });
+  });
+
+  //Internal script variables
+  let sourceValue = "";
+  let awLastClick = "";
+  let matchedSourceParameter = "na";
+  let queryValues = "";
+  let cookieLength;
+  let isOrganicJourney;
+  
+  //Contains function will take a string and a substring, and check if the substring is contained in the given string. This functionality is not offered by Sandboxed JavaScript by default.
+  const Contains = function (string, substring) {
+    let contains = false;
+    if (string == undefined || substring == undefined) {
+      log("String => " + string + " | Substring => " + substring);
+      return;
     }
-    if(stringCharacters[i] == substringCharacters[j]){
-      substringMatchedCharacters--;
-      j++;
-      if(substringMatchedCharacters == 0){
-        contains = true;
-        break;
+    const stringCharacters = string.split("");
+    const substringCharacters = substring.split("");
+    let substringMatchedCharacters = substringCharacters.length;
+    let j = 0;
+    for (var i = 0; i < stringCharacters.length; i++) {
+      if (substringCharacters[j] == undefined) {
+        j = 0;
       }
-    } else {
-      substringMatchedCharacters = substringCharacters.length;
-      j = 0;
+      if (stringCharacters[i] == substringCharacters[j]) {
+        substringMatchedCharacters--;
+        j++;
+        if (substringMatchedCharacters == 0) {
+          contains = true;
+          break;
+        }
+      } else {
+        substringMatchedCharacters = substringCharacters.length;
+        j = 0;
+      }
+    }
+    if (substringMatchedCharacters > 0) {
+      contains = false;
+    }
+    return contains;
+  };
+  if (overwriteCookieDomain) {
+    cookieDomain = awinChannelCookieDomain;
+    if (cookieDomain.substring(0, 1) != ".") {
+      cookieDomain = "." + awinChannelCookieDomain;
+    }
+  } else {
+    for (var i = 0; i < urlParts.length; i++) {
+      if (urlParts[i] != "www") {
+        cookieDomain += "." + urlParts[i];
+      }
     }
   }
-  if(substringMatchedCharacters > 0){
-    contains = false;
+  let websiteDomain = "";
+  if (cookieDomain.substring(0, 1) == ".") {
+    websiteDomain = cookieDomain.substring(1);
+  } else {
+    websiteDomain = cookieDomain;
   }
-  return contains;
-};
-if(overwriteCookieDomain){
-  cookieDomain = awinChannelCookieDomain;
-  if(cookieDomain.substring(0, 1) != "."){
-    cookieDomain = "." + awinChannelCookieDomain;
+  let options = {};
+  //Check if the cookie should be a session cookie or not.
+  if (cookiePeriod == 0) {
+    options = {
+      'domain': cookieDomain,
+      'path': '/',
+      'samesite': 'none',
+      'secure': true,
+      'httpOnly': true
+    };
+  } else {
+    cookieLength = 60 * 60 * 24 * cookiePeriod;
+    options = {
+      'domain': cookieDomain,
+      'path': '/',
+      'samesite': 'none',
+      'max-age': cookieLength,
+      'secure': true,
+      'httpOnly': true
+    };
   }
-} else {
-  for(var i = 0; i < urlParts.length; i++){
-    if(urlParts[i] != "www"){
-      cookieDomain += "." + urlParts[i];
+  //Console log and debug section
+  function TagFired() {
+    const timestamp = getTimestampMillis();
+    log("AwinLastClickIdentifierDebug=true&ServerSide=true&timestamp=" + timestamp + "&sourceParameterValue=" + matchedSourceParameter + "&expectedCookieValue=" + awLastClick + "&cookieName=" + cookieName + "&referrerURL=" + referrer);
+  }
+  function SetChannelCookie() {
+    //Check if the cookise should be a session cookie, and if the user is out of an Awin session, if so, hault the progress of the tag.
+    if (cookiePeriod == 0 && matchedSourceParameter == "na" && !isOrganicJourney && !getCookie(cookieName)[0]) {
+      awLastClick = "direct";
+      setCookie(cookieName, awLastClick, options, false);
+      TagFired();
+      return;
     }
-  }
-}
-let websiteDomain = "";
-if(cookieDomain.substring(0, 1) == "."){
-  websiteDomain = cookieDomain.substring(1);
-} else {
-  websiteDomain = cookieDomain;
-}
-let options = {};
-//Check if the cookie should be a session cookie or not.
-if(cookiePeriod == 0){
-  options = {
-    'domain': cookieDomain,
-    'path': '/',
-    'samesite': 'none',
-    'secure': true,
-    'httpOnly':true
-  };
-} else {
-  cookieLength = 60*60*24*cookiePeriod;
-  options = {
-    'domain': cookieDomain,
-    'path': '/',
-    'samesite': 'none',
-    'max-age': cookieLength,
-    'secure': true,
-    'httpOnly':true
-  };
-}
-//Console log and debug section
-function TagFired(){
-  const timestamp = getTimestampMillis();
-  log("AwinLastClickIdentifierDebug=true&ServerSide=true&timestamp=" + timestamp + "&sourceParameterValue=" + matchedSourceParameter + "&expectedCookieValue=" + awLastClick + "&cookieName=" + cookieName + "&referrerURL=" + referrer);
-}
-function SetChannelCookie(){
-  //Check if the cookise should be a session cookie, and if the user is out of an Awin session, if so, hault the progress of the tag.
-  if(cookiePeriod == 0 && matchedSourceParameter == "na" && !isOrganicJourney && !getCookie(cookieName)[0]){
-    awLastClick = "direct";
-    setCookie(cookieName, awLastClick, options, false);
     TagFired();
-    return;
+    setCookie(cookieName, awLastClick, options, false);
   }
-  TagFired();
-  setCookie(cookieName, awLastClick, options, false);
-}
-//Since the tag now uses an all pages trigger, it needs to know if the user is simply navigating through the website, or visiting it for the first time in his journey.
-if(referrer != undefined && Contains(referrer,websiteDomain)){
-  //Navigating through website, halt the progress of the tag.
-  return;
-} else {
-  //First visit in the session, proceed with tag behaviour.
-  //Find and match the given source parameter.
-  // Iterate over the properties of the object using a for...in loop
-  for (let key in queryParamsObject) {
-    if (queryParamsObject.hasOwnProperty(key)) {
-      const value = queryParamsObject[key];
-      if (sourceParameters.indexOf(key) > -1) {
-        matchedSourceParameter = value;
+  //Since the tag now uses an all pages trigger, it needs to know if the user is simply navigating through the website, or visiting it for the first time in his journey.
+  if (referrer != undefined && Contains(referrer, websiteDomain)) {
+    //Navigating through website, halt the progress of the tag.
+    return;
+  } else {
+    //First visit in the session, proceed with tag behaviour.
+    //Find and match the given source parameter.
+    var hasAwaid = false;
+    var hasOtherClick = false;
+    var sourceParamValue = null;
+    var sourceIsConfigured = sourceParameters.indexOf("source") > -1;
+
+    for (var i = 0; i < queryParameters.length; i++) {
+      queryValues = queryParameters[i].split("=");
+      var paramName = queryValues[0];
+      var paramValue = queryValues[1] || "";
+
+      if (sourceParameters.indexOf(paramName) > -1 && paramValue !== "") {
+        matchedSourceParameter = paramValue;
       }
-      if (key === "source") {
-        sourceParamValue = value;
+
+      //only capture "source" if the advertiser configured it
+      if (sourceIsConfigured && paramName === "source" && paramValue !== "") {
+        sourceParamValue = paramValue;
       }
-      if (key === "awaid") {
+      if (paramName === "awaid") {
         hasAwaid = true;
       }
-      if (key === "fbclid" || key === "gclid") {
+      if (paramName === "fbclid" || paramName === "gclid") {
         hasOtherClick = true;
       }
     }
-  }
-  //if "source" parameter was present, then prefer it
-  if (sourceParamValue !== null) {
-    matchedSourceParameter = sourceParamValue;
-  }
-  //handle parallel tracking
-  if (hasAwaid) {
-    awLastClick = "aw";
-    SetChannelCookie();
-    return;
-  }
-  //handle google/fb channels
-  if (hasOtherClick) {
-    awLastClick = "other";
-    SetChannelCookie();
-    return;
-  }
-  //Check if advertiser enabled the organic filter or not.
-  if(organicFilter == true){
-    for(var i = 0; i < awinSource.length; i++){
-      //Try to find the given Awin Source Values in the matched source parameter.
-      if (Contains(matchedSourceParameter.toLowerCase(), awinSource[i].toLowerCase())){
-        awLastClick = "aw";
-        SetChannelCookie();
-        break;
-      } else if(Contains(referrer, "google") || Contains(referrer, "bing") || Contains(referrer, "yahoo") || Contains(referrer, "yandex") || Contains(referrer, "duckduckgo")){
-        awLastClick = "organic";
-        isOrganicJourney = true;
-        SetChannelCookie();
-      } else if(matchedSourceParameter.toLowerCase() != "na" && matchedSourceParameter.toLowerCase() != awinSource[i].toLowerCase()){
-        awLastClick = "other";
-        SetChannelCookie();
+
+    //if "source" is configured and present, prefer it over other source parameters
+    if (sourceParamValue !== null) {
+      matchedSourceParameter = sourceParamValue;
+    }
+
+    //handle parallel tracking
+    if (hasAwaid) {
+      awLastClick = "aw";
+      SetChannelCookie();
+      return;
+    }
+
+    //handle google/fb channels
+    if (hasOtherClick) {
+      awLastClick = "other";
+      SetChannelCookie();
+      return;
+    }
+
+    //Check if advertiser enabled the organic filter or not.
+    if (organicFilter == true) {
+      for (var i = 0; i < awinSource.length; i++) {
+        //Try to find the given Awin Source Values in the matched source parameter.
+        if (Contains(matchedSourceParameter.toLowerCase(), awinSource[i].toLowerCase())) {
+          awLastClick = "aw";
+          SetChannelCookie();
+          break;
+        } else if (Contains(referrer, "google") || Contains(referrer, "bing") || Contains(referrer, "yahoo") || Contains(referrer, "yandex") || Contains(referrer, "duckduckgo")) {
+          awLastClick = "organic";
+          isOrganicJourney = true;
+          SetChannelCookie();
+        } else if (matchedSourceParameter.toLowerCase() != "na" && matchedSourceParameter.toLowerCase() != awinSource[i].toLowerCase()) {
+          awLastClick = "other";
+          SetChannelCookie();
+        }
+      }
+    } else {
+      TagFired("organicFalse");
+      //Advertiser did not enable the organic trigger, proceed with normal last paid click checks.
+      for (var i = 0; i < awinSource.length; i++) {
+        if (Contains(matchedSourceParameter.toLowerCase(), awinSource[i].toLowerCase())) {
+          awLastClick = "aw";
+          SetChannelCookie();
+          break;
+        } else if (matchedSourceParameter.toLowerCase() != "na" && matchedSourceParameter.toLowerCase() != awinSource[i].toLowerCase()) {
+          awLastClick = "other";
+          SetChannelCookie();
+        }
       }
     }
-  } else {
-    TagFired("organicFalse");
-    //Advertiser did not enable the organic trigger, proceed with normal last paid click checks.
-    for(var i = 0; i < awinSource.length; i++){
-      if (Contains(matchedSourceParameter.toLowerCase(), awinSource[i].toLowerCase())) {
-        awLastClick = "aw";
-        SetChannelCookie();
-        break;
-      } else if (matchedSourceParameter.toLowerCase() != "na" && matchedSourceParameter.toLowerCase() != awinSource[i].toLowerCase()){
-        awLastClick = "other";
-        SetChannelCookie();
-      }
+    //Check if no cookie was created, this means the user didn't interact with any medias, default cookie to "undefined".
+    if (!getCookie(cookieName)[0] && matchedSourceParameter == "na") {
+      awLastClick = "direct";
+      SetChannelCookie();
     }
   }
-  //Check if no cookie was created, this means the user didn't interact with any medias, default cookie to "undefined".
-  if(!getCookie(cookieName)[0] && matchedSourceParameter == "na"){
-    awLastClick = "direct";
-    SetChannelCookie();
-  }
-}
 }());
 // Call data.gtmOnSuccess when the tag is finished.
 data.gtmOnSuccess();
